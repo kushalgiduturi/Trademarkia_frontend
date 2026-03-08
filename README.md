@@ -2,7 +2,7 @@
 
 A lightweight, real-time collaborative spreadsheet built with Next.js 14 (App Router), Firebase Realtime Database, and TypeScript.
 
-Live demo: _deploy to Vercel and add URL here_
+Live demo: https://trademarkia-frontend-b836.vercel.app/
 
 ---
 
