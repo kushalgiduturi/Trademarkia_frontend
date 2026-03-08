@@ -115,6 +115,7 @@ export function Cell({
     <div
       tabIndex={isSelected ? 0 : -1}
       role="gridcell"
+      aria-label={`Cell ${id}`}
       onClick={handleClick}
       onDoubleClick={handleDoubleClick}
       onKeyDown={handleCellKeyDown}
@@ -130,12 +131,10 @@ export function Cell({
         maxWidth: w,
         height: h,
         minHeight: h,
-        ringColor: peerOn?.color,
         ...(peerOn ? { boxShadow: `inset 0 0 0 1px ${peerOn.color}` } : {}),
         backgroundColor: fmt.bgColor ?? undefined,
       }}
     >
-      {/* Peer indicator dot */}
       {peerOn && (
         <div
           className="absolute top-0 left-0 w-2 h-2 z-20"
@@ -147,6 +146,7 @@ export function Cell({
       {isEditing ? (
         <input
           ref={inputRef}
+          aria-label={`Edit cell ${id}`}
           value={editValue}
           onChange={(e) => setEditValue(e.target.value)}
           onKeyDown={handleKeyDown}
