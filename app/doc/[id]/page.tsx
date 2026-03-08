@@ -90,14 +90,16 @@ export default function DocPage({ params }: { params: Params }) {
         {/* Title */}
         {editingTitle ? (
           <input
-            autoFocus
-            value={titleValue}
-            onChange={(e) => setTitleValue(e.target.value)}
-            onBlur={handleTitleBlur}
-            onKeyDown={handleTitleKeyDown}
-            className="text-sm font-sans font-medium text-ink bg-surface-2 border border-accent/40
-              rounded px-2 py-0.5 outline-none focus:border-accent/70 min-w-0 max-w-xs"
-          />
+  autoFocus
+  value={titleValue}
+  placeholder="Document title"
+  aria-label="Document title"
+  onChange={(e) => setTitleValue(e.target.value)}
+  onBlur={handleTitleBlur}
+  onKeyDown={handleTitleKeyDown}
+  className="text-sm font-sans font-medium text-ink bg-surface-2 border border-accent/40
+    rounded px-2 py-0.5 outline-none focus:border-accent/70 min-w-0 max-w-xs"
+/>
         ) : (
           <button
             onClick={() => {
