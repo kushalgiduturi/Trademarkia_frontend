@@ -1,0 +1,43 @@
+type User @table {
+  displayName: String!
+  email: String!
+  createdAt: Timestamp!
+  organizationName: String
+  photoUrl: String
+}
+
+type Trademark @table {
+  user: User
+  name: String!
+  status: String!
+  registrationDate: Date!
+  expirationDate: Date!
+  createdAt: Timestamp!
+  description: String
+  applicationNumber: String
+  registrationNumber: String
+}
+
+type ProductService @table {
+  user: User
+  name: String!
+  category: String!
+  createdAt: Timestamp!
+  description: String
+}
+
+type TrademarkProductService @table(key: ["trademark", "productService"]) {
+  trademark: Trademark!
+  productService: ProductService!
+  createdAt: Timestamp!
+  usageDescription: String
+}
+
+type Document @table {
+  trademark: Trademark
+  fileName: String!
+  fileType: String!
+  uploadDate: Date!
+  fileUrl: String!
+  description: String
+}

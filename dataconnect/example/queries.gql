@@ -1,0 +1,52 @@
+query ListAllTrademarks @auth(level: PUBLIC, insecureReason: "This operation is safe to expose to the public as it only retrieves public information.") {
+  trademarks {
+    id
+    name
+    status
+    registrationDate
+    expirationDate
+    description
+  }
+}
+
+query MyDocuments @auth(level: USER, insecureReason: "This operation is safe to expose to all logged in users as it filters by auth.uid.") {
+  documents(where: {trademark: {userId: {eq_expr: "auth.uid"}}}) {
+    id
+    fileName
+    fileType
+    uploadDate
+    fileUrl
+    description
+    trademark {
+      name
+    }
+  }
+}
+
+mutation CreateProductService($name: String!, $category: String!, $description: String) @auth(level: USER, insecureReason: "This operation is safe to expose to all logged in users as it associates the product service with auth.uid.") {
+  productService_insert(data: {
+    userId_expr: "auth.uid",
+    name: $name,
+    category: $category,
+    description: $description,
+    createdAt_expr: "request.time"
+  }) {
+    id
+  }
+}
+
+mutation RegisterTrademark($name: String!, $status: String!, $registrationDate: Date!, $expirationDate: Date!, $description: String, $applicationNumber: String, $registrationNumber: String) @auth(level: USER, insecureReason: "This operation is safe to expose to all logged in users as it associates the trademark with auth.uid.") {
+  trademark_insert(data: {
+    userId_expr: "auth.uid",
+    name: $name,
+    status: $status,
+    registrationDate: $registrationDate,
+    expirationDate: $expirationDate,
+    description: $description,
+    applicationNumber: $applicationNumber,
+    registrationNumber: $registrationNumber,
+    createdAt_expr: "request.time"
+  }) {
+    id
+  }
+}
