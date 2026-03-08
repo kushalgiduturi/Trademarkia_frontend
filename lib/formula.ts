@@ -1,29 +1,8 @@
 import type { CellData, CellId } from "@/types";
 import { parseCellId, cellId } from "@/types";
 
-/**
- * Formula Engine
- *
- * Design rationale:
- * We implement a recursive-descent expression parser that handles:
- *  - Arithmetic: +, -, *, / with correct precedence
- *  - Cell references: A1, B3, etc.
- *  - Range references: A1:B3
- *  - Functions: SUM, AVERAGE, MIN, MAX, COUNT, IF
- *  - Nested formulas and parentheses
- *
- * We deliberately do NOT implement:
- *  - Circular reference detection beyond a depth limit (too complex for scope)
- *  - Volatile functions like NOW() / RAND() (no scheduler)
- *  - Array formulas
- *
- * Errors surface as #ERR strings rather than thrown exceptions so the grid
- * can display them gracefully.
- */
-
 type CellStore = Record<CellId, CellData>;
-
-// ─── Tokenizer ────────────────────────────────────────────────────────────────
+type Value = number | string | Array<number | string>;
 
 type TokenType =
   | "NUMBER"
@@ -107,14 +86,12 @@ function tokenize(expr: string): Token[] {
       continue;
     }
 
-    i++; // skip unknown
+    i++;
   }
 
   tokens.push({ type: "EOF", value: "" });
   return tokens;
 }
-
-// ─── Parser / Evaluator ───────────────────────────────────────────────────────
 
 class Parser {
   private tokens: Token[];
@@ -135,16 +112,18 @@ class Parser {
   }
 
   parseExpr(): number | string {
-    return this.parseComparison();
+    const result = this.parseComparison();
+    if (Array.isArray(result)) return toNum(result[0]);
+    return result;
   }
 
-  private parseComparison(): number | string {
+  private parseComparison(): Value {
     let left = this.parseAddSub();
     while (this.match("EQ", "NEQ", "LT", "LTE", "GT", "GTE")) {
       const op = this.consume().type;
       const right = this.parseAddSub();
-      const l = toNum(left);
-      const r = toNum(right);
+      const l = toNum(Array.isArray(left) ? left[0] : left);
+      const r = toNum(Array.isArray(right) ? right[0] : right);
       switch (op) {
         case "EQ": left = l === r ? 1 : 0; break;
         case "NEQ": left = l !== r ? 1 : 0; break;
@@ -157,40 +136,41 @@ class Parser {
     return left;
   }
 
-  private parseAddSub(): number | string {
+  private parseAddSub(): Value {
     let left = this.parseMulDiv();
     while (this.match("PLUS", "MINUS")) {
       const op = this.consume().type;
       const right = this.parseMulDiv();
-      const l = toNum(left);
-      const r = toNum(right);
+      const l = toNum(Array.isArray(left) ? left[0] : left);
+      const r = toNum(Array.isArray(right) ? right[0] : right);
       left = op === "PLUS" ? l + r : l - r;
     }
     return left;
   }
 
-  private parseMulDiv(): number | string {
+  private parseMulDiv(): Value {
     let left = this.parseUnary();
     while (this.match("STAR", "SLASH")) {
       const op = this.consume().type;
       const right = this.parseUnary();
-      const l = toNum(left);
-      const r = toNum(right);
+      const l = toNum(Array.isArray(left) ? left[0] : left);
+      const r = toNum(Array.isArray(right) ? right[0] : right);
       if (op === "SLASH" && r === 0) return "#DIV/0!";
       left = op === "STAR" ? l * r : l / r;
     }
     return left;
   }
 
-  private parseUnary(): number | string {
+  private parseUnary(): Value {
     if (this.match("MINUS")) {
       this.consume();
-      return -toNum(this.parsePrimary());
+      const val = this.parsePrimary();
+      return -toNum(Array.isArray(val) ? val[0] : val);
     }
     return this.parsePrimary();
   }
 
-  private parsePrimary(): number | string {
+  private parsePrimary(): Value {
     const tok = this.peek();
 
     if (tok.type === "NUMBER") {
@@ -211,19 +191,16 @@ class Parser {
     }
 
     if (tok.type === "IDENT") {
-      // Check next token to decide: function call vs cell ref
       const nextTok = this.tokens[this.pos + 1];
 
       if (nextTok?.type === "LPAREN") {
-        // Function call
-        this.consume(); // name
-        this.consume(); // (
+        this.consume();
+        this.consume();
         const args = this.parseArgList();
         if (this.match("RPAREN")) this.consume();
         return this.callFunction(tok.value, args);
       }
 
-      // Could be range start: A1:B3
       const cellMatch = tok.value.match(/^([A-Z]+)(\d+)$/);
       if (cellMatch) {
         this.consume();
@@ -235,7 +212,6 @@ class Parser {
             return this.expandRange(tok.value, endTok.value);
           }
         }
-        // Single cell reference
         return this.getCellValue(tok.value);
       }
 
@@ -249,13 +225,12 @@ class Parser {
   private parseArgList(): Array<number | string | Array<number | string>> {
     const args: Array<number | string | Array<number | string>> = [];
     while (!this.match("RPAREN", "EOF")) {
-      // Check for range: IDENT:IDENT
       if (
         this.peek().type === "IDENT" &&
         this.tokens[this.pos + 1]?.type === "COLON"
       ) {
         const start = this.consume().value;
-        this.consume(); // colon
+        this.consume();
         const end = this.consume().value;
         args.push(this.expandRange(start, end));
       } else {
@@ -266,10 +241,7 @@ class Parser {
     return args;
   }
 
-  private expandRange(
-    startId: string,
-    endId: string
-  ): Array<number | string> {
+  private expandRange(startId: string, endId: string): Array<number | string> {
     const start = parseCellId(startId);
     const end = parseCellId(endId);
     if (!start || !end) return [];
@@ -293,8 +265,7 @@ class Parser {
     const cell = this.cells[id];
     if (!cell) return 0;
     if (cell.raw.startsWith("=")) {
-      const result = evaluateFormula(cell.raw.slice(1), this.cells, this.depth + 1);
-      return typeof result === "number" ? result : result;
+      return evaluateFormula(cell.raw.slice(1), this.cells, this.depth + 1);
     }
     const num = parseFloat(cell.raw);
     return isNaN(num) ? cell.raw : num;
@@ -304,59 +275,45 @@ class Parser {
     name: string,
     args: Array<number | string | Array<number | string>>
   ): number | string {
-    // Flatten nested arrays from ranges
     const flat = args.flatMap((a) => (Array.isArray(a) ? a : [a]));
     const nums = flat.map(toNum).filter((n) => !isNaN(n));
 
     switch (name) {
       case "SUM":
         return nums.reduce((a, b) => a + b, 0);
-
       case "AVERAGE":
         return nums.length === 0 ? 0 : nums.reduce((a, b) => a + b, 0) / nums.length;
-
       case "MIN":
         return nums.length === 0 ? 0 : Math.min(...nums);
-
       case "MAX":
         return nums.length === 0 ? 0 : Math.max(...nums);
-
       case "COUNT":
         return nums.length;
-
       case "IF": {
         const cond = toNum(args[0] as number | string);
         return cond !== 0 ? (args[1] as number | string ?? 0) : (args[2] as number | string ?? 0);
       }
-
       case "ROUND": {
         const [val, decimals] = args as [number | string, number | string];
         return parseFloat(toNum(val).toFixed(toNum(decimals ?? 0)));
       }
-
       case "ABS":
         return Math.abs(toNum(args[0] as number | string));
-
       case "SQRT": {
         const v = toNum(args[0] as number | string);
         return v < 0 ? "#NUM!" : Math.sqrt(v);
       }
-
       case "CONCATENATE":
       case "CONCAT":
         return flat.map(String).join("");
-
       case "LEN":
         return String(args[0] ?? "").length;
-
       case "UPPER":
         return String(args[0] ?? "").toUpperCase();
-
       case "LOWER":
         return String(args[0] ?? "").toLowerCase();
-
       default:
-        return `#NAME?`;
+        return "#NAME?";
     }
   }
 }
@@ -368,8 +325,6 @@ function toNum(v: number | string | undefined): number {
   return isNaN(n) ? 0 : n;
 }
 
-// ─── Public API ───────────────────────────────────────────────────────────────
-
 export function evaluateFormula(
   expr: string,
   cells: CellStore,
@@ -380,9 +335,7 @@ export function evaluateFormula(
     const parser = new Parser(tokens, cells, depth);
     const result = parser.parseExpr();
     if (typeof result === "number") {
-      // Pretty-print: limit floating point noise
-      const rounded = parseFloat(result.toPrecision(12));
-      return rounded;
+      return parseFloat(result.toPrecision(12));
     }
     return result;
   } catch {
@@ -396,10 +349,6 @@ export function computeCell(raw: string, cells: CellStore): string {
   return String(result);
 }
 
-/** Re-compute all formula cells in one pass (no topological sort — one pass is
- *  sufficient for linear dependencies; deeper DAGs resolve on next keystroke).
- *  For a production system we'd build a dependency DAG, but that's out of scope.
- */
 export function recomputeAll(
   cells: Record<CellId, CellData>
 ): Record<CellId, CellData> {
